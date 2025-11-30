@@ -1,0 +1,28 @@
+meta {
+  name: Ask Question
+  type: http
+  seq: 2
+}
+
+post {
+  url: http://127.0.0.1:8000/question
+  body: json
+  auth: inherit
+}
+
+headers {
+  Accept: application/json
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "question": "Qual artigo da NEC fala sobre grounding de motores e geradores?"
+  }
+  
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

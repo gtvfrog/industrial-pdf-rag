@@ -1,0 +1,14 @@
+.git
+__pycache__/
+.venv/
+env/
+models_cache/
+metrics_history/
+documents/
+tmp/
+*.log
+.pytest_cache/
+.idea/
+.vscode/
+case_files/
+data/

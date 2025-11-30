@@ -1,0 +1,12 @@
+app:
+  name: "Industrial RAG Assistant"
+  version: "1.0.0"
+  debug: true
+
+server:
+  host: "0.0.0.0"
+  port: 8000
+
+rag:
+  chunk_size_chars: 1000
+  chunk_overlap_chars: 150

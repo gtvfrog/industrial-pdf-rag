@@ -1,0 +1,9 @@
+{
+  "version": "1",
+  "name": "collection_rag",
+  "type": "collection",
+  "ignore": [
+    "node_modules",
+    ".git"
+  ]
+}
