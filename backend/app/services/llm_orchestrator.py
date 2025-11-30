@@ -1,5 +1,5 @@
 import logging
-from typing import Optional, List, Protocol
+from typing import Optional, List, Protocol, Dict
 import google.generativeai as genai
 from app.services.models import Chunk
 from app.core.config import Settings
@@ -7,84 +7,84 @@ from app.core.config import Settings
 logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = """
-Você é um assistente técnico especializado em equipamentos industriais, com foco em motores, redutores, motorredutores e produtos WEG/WEG-CESTARI.
+Você é um especialista técnico em motores elétricos WEG, redutores e motorredutores WEG-CESTARI
+e motores Baldor. Seu trabalho é responder perguntas com base nos trechos de manuais fornecidos.
 
-Seu trabalho é responder perguntas APENAS com base nos trechos de manuais e documentos fornecidos no CONTEXTO. 
-Você está atendendo um profissional de manutenção/engenharia, então responda com clareza, precisão técnica e sem enrolação.
+Regras importantes:
 
-REGRAS IMPORTANTES:
+1. Idioma e tom
+- Responda sempre em português do Brasil.
+- Use linguagem clara, direta e prática, como se estivesse ajudando um técnico de manutenção.
 
-1. Use SOMENTE as informações presentes no contexto fornecido.
-   - Se a pergunta não puder ser respondida com segurança a partir do contexto, diga explicitamente:
-     "Não encontrei informação suficiente nos manuais fornecidos para responder com segurança."
-   - Nunca invente especificações, limites, recomendações ou dados técnicos.
+2. Uso do contexto
+- Use as informações presentes nos trechos de contexto.
+- Você PODE combinar informações de arquivos diferentes se eles forem relevantes.
+- Se os documentos fornecidos falam sobre tópicos RELACIONADOS à pergunta (mesmo que não sejam 
+  exatamente sobre o equipamento específico mencionado na pergunta), USE essa informação e 
+  deixe claro de onde vem.
+- Não invente números, tabelas ou procedimentos que não apareçam claramente no contexto.
 
-2. Idioma:
-   - Responda sempre em português do Brasil, mesmo que o manual tenha partes em inglês ou espanhol.
-   - Se citar trechos em outra língua, pode traduzir ou explicar em português.
+3. Quando o contexto é parcial ou relacionado
+- Se o contexto tem informações sobre um tópico SIMILAR ou RELACIONADO, use-as e deixe claro:
+  - "Os manuais fornecidos não falam especificamente sobre [X], mas descrevem procedimentos 
+    similares para [Y]..."
+  - "Embora os documentos não mencionem [X] explicitamente, as orientações gerais sobre [Y] são..."
+- SEMPRE tente fornecer informação útil, mesmo que parcial.
 
-3. Forma da resposta:
-   - Comece com uma resposta direta, em 1–3 frases.
-   - Em seguida, se fizer sentido, detalhe em tópicos:
-     - condições
-     - parâmetros importantes (torque, temperatura, posição de montagem, lubrificação etc.)
-     - cuidados de segurança e manutenção
-   - Seja objetivo, mas bem explicado. Evite parágrafos gigantes.
+4. Quando realmente faltar informação
+- Só responda "não encontrei informação suficiente nos manuais" se os documentos fornecidos 
+  forem COMPLETAMENTE irrelevantes para a pergunta.
+- Antes de dizer que não encontrou, verifique se não há informação RELACIONADA ou GENÉRICA 
+  que possa ser útil.
 
-4. Referências aos documentos:
-   - Sempre que possível, indique de onde tirou a informação, com:
-     - nome do arquivo (ou título simplificado)
-     - número da página
-   - Ao final da resposta, inclua uma seção:
-     "Fontes:"
-     - arquivo X, página Y – breve descrição do que foi usado
-     - arquivo Z, página W – breve descrição
+5. Formato da resposta
+Sempre que possível, siga esta estrutura:
 
-5. Quando a pergunta misturar conceitos:
-   - Se a resposta envolver mais de um manual, deixe claro o que veio de cada um.
-   - Se houver diferenças ou limitações, mencione isso de forma honesta.
+1) Resumo inicial em 2–3 frases, respondendo diretamente ou indicando o que foi encontrado.
+2) Se fizer sentido, liste orientações em tópicos, por exemplo:
+   - requisitos de transporte
+   - passos de inspeção
+   - recomendações de lubrificação
+3) Inclua uma seção final chamada "Referências", no formato:
+   - <arquivo> – página X: breve descrição do que foi usado
 
-6. Se a pergunta estiver mal formulada:
-   - Use o que existir no contexto.
-   - Se ainda assim ficar ambígua, explique qual interpretação você está assumindo ou peça que a pergunta seja reformulada (mas ainda tente ajudar com o que tem).
-
-Seu foco é: ser um “manual vivo” dos PDFs fornecidos, com respostas confiáveis, explicadas e bem referenciadas.
+6. Estilo
+- Não copie parágrafos enormes; resuma com suas palavras.
+- Seja objetivo e técnico, sem rodeios.
+- SEMPRE tente ser útil. É melhor fornecer informação parcial ou relacionada do que dizer 
+  que não encontrou nada.
 """
 
-def build_rag_prompt(question: str, chunks: List[Chunk]) -> str:
-    context_blocks = []
-    for c in chunks:
-        filename = c.metadata.get("filename") or getattr(c, "source", "unknown")
-        page = c.page if c.page is not None else "?"
-        
+def build_rag_messages(question: str, chunks: List[Chunk]) -> List[Dict[str, str]]:
+    """
+    Monta as mensagens no formato chat (system + user) para Mistral e Gemini,
+    incluindo contexto paginado.
+    """
+    context_blocks: List[str] = []
+    for idx, chunk in enumerate(chunks, start=1):
+        filename = chunk.metadata.get("filename", "desconhecido")
+        page = chunk.page if chunk.page is not None else chunk.metadata.get("page_number", "?")
+        text = chunk.text.strip()
         context_blocks.append(
-            f"---\n[DOC_ID: {c.doc_id}] [ARQUIVO: {filename}] [PÁGINA: {page}]\n{c.text}\n"
+            f"[{idx}] Documento: {filename} | página: {page}\n{text}"
         )
-    
-    context_text = "\n".join(context_blocks)
 
-    final_prompt = f"""
-[INSTRUÇÕES DO SISTEMA]
-{SYSTEM_PROMPT}
+    context_str = "\n\n".join(context_blocks)
 
-[CONTEXTOS RELEVANTES DOS MANUAIS]
-
-Abaixo estão trechos dos manuais que você PODE usar para responder.
-
-{context_text}
-
-[PERGUNTA DO USUÁRIO]
-
+    user_content = f"""
+Pergunta do usuário:
 {question}
 
-[INSTRUÇÕES FINAIS DE FORMATAÇÃO]
+Trechos relevantes dos manuais (NÃO repita tudo na resposta, use apenas o que precisar):
+{context_str}
 
-1. Responda em português do Brasil.
-2. Comece com uma resposta direta em 1–3 frases.
-3. Depois, se fizer sentido, detalhe em tópicos (condições, parâmetros, cuidados).
-4. Ao final, inclua uma seção "Fontes:" listando arquivos e páginas usados.
+Agora responda seguindo estritamente as regras do system prompt.
 """
-    return final_prompt
+
+    return [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": user_content},
+    ]
 
 class LLMProviderError(Exception):
     def __init__(self, provider: str, message: str, original_exception: Optional[Exception] = None):
@@ -163,14 +163,35 @@ class LocalLLMClient:
                 )
     
     def answer(self, question: str, chunks: List[Chunk]) -> str:
+        import time
+        from app.services.metrics import get_metrics_collector
+        
         try:
             self._load_model()
             
-            prompt = build_rag_prompt(question, chunks)
+            messages = build_rag_messages(question, chunks)
+            
+            # Convert messages to prompt format expected by the model
+            # Assuming the model supports chat template or we construct a simple prompt
+            # For Mistral Instruct, we can use the tokenizer's apply_chat_template if available
+            # or manual formatting.
+            
+            if hasattr(LocalLLMClient._tokenizer, "apply_chat_template"):
+                prompt = LocalLLMClient._tokenizer.apply_chat_template(
+                    messages, 
+                    tokenize=False, 
+                    add_generation_prompt=True
+                )
+            else:
+                # Fallback manual formatting
+                system_msg = messages[0]["content"]
+                user_msg = messages[1]["content"]
+                prompt = f"[INST] {system_msg}\n\n{user_msg} [/INST]"
             
             inputs = LocalLLMClient._tokenizer(prompt, return_tensors="pt")
             inputs = {k: v.to(LocalLLMClient._model.device) for k, v in inputs.items()}
             
+            start_time = time.time()
             outputs = LocalLLMClient._model.generate(
                 **inputs,
                 max_new_tokens=self.max_new_tokens,
@@ -178,17 +199,20 @@ class LocalLLMClient:
                 do_sample=True,
                 pad_token_id=LocalLLMClient._tokenizer.eos_token_id
             )
-            
-            answer = LocalLLMClient._tokenizer.decode(outputs[0], skip_special_tokens=True)
-            
-            if "[INSTRUÇÕES FINAIS DE FORMATAÇÃO]" in answer:
-                parts = answer.split("[INSTRUÇÕES FINAIS DE FORMATAÇÃO]")
-                if len(parts) > 1:
-                    pass
+            duration = time.time() - start_time
             
             input_length = inputs["input_ids"].shape[1]
             generated_tokens = outputs[0][input_length:]
             answer = LocalLLMClient._tokenizer.decode(generated_tokens, skip_special_tokens=True)
+            
+            output_tokens = len(generated_tokens)
+            
+            get_metrics_collector().record_llm(
+                question=question,
+                duration=duration,
+                input_tokens=input_length,
+                output_tokens=output_tokens
+            )
             
             return answer.strip()
             
@@ -219,15 +243,35 @@ class GeminiLLMClient:
         )
     
     def answer(self, question: str, chunks: List[Chunk]) -> str:
+        import time
+        from app.services.metrics import get_metrics_collector
+        
         try:
-            prompt = build_rag_prompt(question, chunks)
+            messages = build_rag_messages(question, chunks)
+            user_content = messages[1]["content"]
             
+            start_time = time.time()
             response = self.model.generate_content(
-                prompt,
+                user_content,
                 generation_config=genai.types.GenerationConfig(
                     max_output_tokens=1024,
                     temperature=0.1,
                 )
+            )
+            duration = time.time() - start_time
+            
+            input_tokens = 0
+            output_tokens = 0
+            
+            if hasattr(response, 'usage_metadata'):
+                input_tokens = getattr(response.usage_metadata, 'prompt_token_count', 0)
+                output_tokens = getattr(response.usage_metadata, 'candidates_token_count', 0)
+            
+            get_metrics_collector().record_llm(
+                question=question,
+                duration=duration,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens
             )
             
             return response.text.strip() if response.text else ""
