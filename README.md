@@ -1,48 +1,28 @@
-# 📄 RAG PDF System – Document QA
+# 📄 Industrial RAG Assistant
 
-Este projeto implementa um sistema simples e funcional para perguntas e respostas baseadas em PDFs.  
-A ideia é permitir que o usuário envie documentos, o backend processe o conteúdo e, depois, um LLM responda perguntas usando somente informações retiradas desses arquivos.
-
-O foco é clareza, modularidade e facilidade de execução — alinhado ao que o desafio pede.
+Sistema de perguntas e respostas baseado em PDFs de manuais industriais (WEG, WEG-CESTARI, Baldor).
 
 ---
 
-## 🧠 Visão geral
-
-O sistema funciona em três etapas principais:
-
-1. **Envio de PDFs**  
-   O backend recebe um ou mais arquivos, extrai texto, divide em chunks e gera embeddings.
-
-2. **Indexação**  
-   Os vetores são armazenados em memória (FAISS).  
-   Simples, rápido e adequado ao escopo do desafio.
-
-3. **Perguntas**  
-   O usuário envia uma pergunta → o sistema busca os chunks mais relevantes → monta o contexto → passa para o LLM gerar a resposta.
-
-O modelo pode ser local ou remoto. A implementação deixa isso flexível.
-
----
-
-## 🏗️ Arquitetura do Projeto
+## 🏗️ Arquitetura
 
 ```
-rag-pdf-system/
+industrial-rag-assistant/
 ├── backend/
 │   ├── app/
-│   │   ├── api/           # Rotas e validações
-│   │   ├── core/          # Configs e setup
-│   │   ├── rag/           # Chunking, embeddings, FAISS, retrieval
-│   │   └── llm/           # Integração com LLM
-│   └── main.py            # FastAPI entrypoint
+│   │   ├── api/                # Rotas FastAPI
+│   │   ├── core/               # Configurações
+│   │   ├── services/           # Serviços (embeddings, retrieval, LLM, metrics)
+│   │   └── main.py
+│   ├── scripts/                # Utilitários
+│   └── tests/
 ├── frontend/
-│   └── streamlit_app.py   # Interface (opcional)
+│   └── Chat.py                 # Interface Streamlit
 ├── config/
-│   ├── .env.example
-│   └── settings.yaml
+│   ├── .env
+│   └── logging.json
+├── k8s/                        # Manifests Kubernetes
 ├── docker-compose.yml
-├── Dockerfile
 └── README.md
 ```
 
@@ -50,190 +30,122 @@ rag-pdf-system/
 
 ## ⚙️ Tecnologias
 
-- **FastAPI** – API rápida e tipada  
-- **FAISS** – Busca vetorial  
-- **HuggingFace Embeddings** – sentence-transformers  
-- **LLM local ou API externa** – Mistral, Ollama, OpenAI etc.  
-- **Streamlit** (opcional) – Interface visual simples  
-
----
-
-## 📌 Endpoints
-
-### **POST /documents**
-Recebe e indexa PDFs.
-
-Exemplo:
-```bash
-curl -X POST "http://localhost:8000/documents" \
-  -F "files=@manual1.pdf" \
-  -F "files=@manual2.pdf"
-```
-
-Resposta:
-```json
-{
-  "message": "Documents processed successfully",
-  "documents_indexed": 2,
-  "total_chunks": 128
-}
-```
-
----
-
-### **POST /question**
-Recebe uma pergunta e retorna resposta + referências.
-
-```bash
-curl -X POST http://localhost:8000/question \
-  -H "Content-Type: application/json" \
-  -d '{"question": "What is the power consumption?"}'
-```
-
-Resposta:
-```json
-{
-  "answer": "The motor's power consumption is 2.3 kW.",
-  "references": [
-    "the motor xxx requires 2.3kw to operate at 60hz"
-  ]
-}
-```
+- **Backend**: FastAPI + Python 3.10+
+- **Embeddings**: HuggingFace (multilingual-e5-base)
+- **Vector Store**: FAISS ou InMemory
+- **LLM**: Gemini 2.0 Flash ou Mistral 7B local
+- **Frontend**: Streamlit
+- **Deploy**: Docker + Kubernetes
 
 ---
 
 ## 🚀 Como rodar
 
-### **1. Instalar dependências**
+### Local
+
 ```bash
-pip install -r requirements.txt
+# Backend
+cd backend
+pip install -r ../requirements.txt
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+
+# Frontend (em outro terminal)
+streamlit run frontend/Chat.py --server.port 8501
 ```
 
-### **2. Subir o backend**
-```bash
-uvicorn backend.main:app --reload
-```
-
-### **3. Opcional: rodar o Streamlit**
-```bash
-streamlit run frontend/streamlit_app.py
-```
-
----
-
-## 🐳 Docker
+### Docker
 
 ```bash
 docker-compose up --build
 ```
 
-Backend:  
-`http://localhost:8000/docs`
+- Backend: `http://localhost:8000/docs`
+- Frontend: `http://localhost:8501`
 
-Frontend opcional:  
-`http://localhost:8501`
+### Kubernetes
+
+```bash
+# Configurar secrets
+kubectl apply -f k8s/secret-example.yaml
+
+# Deploy
+kubectl apply -f k8s/configmap.yaml
+kubectl apply -f k8s/backend-deployment.yaml
+kubectl apply -f k8s/frontend-deployment.yaml
+kubectl apply -f k8s/ingress.yaml
+```
 
 ---
 
-## 🗂️ Vector Store Backends
+## 📌 Endpoints Principais
 
-O sistema suporta dois backends de busca vetorial:
-
-### **FAISS** (padrão)
-- Usa FAISS IndexFlatIP
-- Mais rápido para datasets grandes (>5K vetores)
-- Suporta save/load com persistência de índice
-- Otimizado para similaridade de cosseno
-
-### **InMemory**
-- Usa NumPy puro
-- Ideal para desenvolvimento e datasets pequenos
-- Suporta save/load em disco (pickle)
-- Normalização automática de vetores para cosine similarity
-
-### Como trocar entre backends
-
-Configure a variável de ambiente `VECTOR_STORE_BACKEND`:
+### **POST /documents**
+Upload e indexação de PDFs
 
 ```bash
-# Usar FAISS (padrão)
-export VECTOR_STORE_BACKEND=faiss
-
-# Usar InMemory
-export VECTOR_STORE_BACKEND=inmemory
+curl -X POST "http://localhost:8000/documents" \
+  -F "files=@manual.pdf"
 ```
 
-Ou no `.env`:
-```
-VECTOR_STORE_BACKEND=faiss
-```
-
-### Benchmark de Performance
-
-Para comparar a performance entre os backends:
+### **POST /question**
+Realizar pergunta
 
 ```bash
-python -m backend.scripts.benchmark_vector_stores
+curl -X POST http://localhost:8000/question \
+  -H "Content-Type: application/json" \
+  -d '{"question": "Como é o transporte de redutores?"}'
 ```
 
-Exemplo de saída:
-```
-Backend        N           index_time_s    search_time_s   avg_search_ms
-------------------------------------------------------------------------
-InMemory       1000        0.12            0.05            0.50
-Faiss          1000        0.08            0.02            0.20
-InMemory       5000        0.58            0.23            2.30
-Faiss          5000        0.35            0.08            0.80
-InMemory       10000       1.15            0.45            4.50
-Faiss          10000       0.68            0.15            1.50
-```
+### **GET /documents**
+Listar documentos indexados
 
-O benchmark testa indexação e busca com vetores de 768 dimensões.
+### **GET /metrics**
+Métricas do sistema (retrieval, LLM, embeddings)
 
 ---
 
-## 🔪 Chunking Configuration
+## 🔧 Configuração
 
-O sistema usa **chunking baseado em caracteres** para dividir os documentos em pedaços menores antes da indexação.
+Principais variáveis de ambiente (`.env`):
 
-### Parâmetros Padrão
-
-- **chunk_size_chars**: 1000 caracteres
-- **chunk_overlap_chars**: 150 caracteres
-
-Esses valores foram escolhidos como um bom equilíbrio entre:
-- Contexto suficiente para embeddings significativos
-- Tamanho gerenciável para o modelo de linguagem
-- Overlap adequado para manter continuidade entre chunks
-
-### Configuração
-
-Os parâmetros podem ser ajustados via:
-
-**1. Variáveis de ambiente (`.env`):**
 ```bash
+# LLM
+LLM_PROVIDER=gemini                               # ou "local"
+GEMINI_API_KEY=your_key_here
+GEMINI_LLM_MODEL=gemini-2.0-flash-exp
+
+# Embeddings
+EMBEDDING_PROVIDER=huggingface
+EMBEDDING_MODEL_NAME=intfloat/multilingual-e5-base
+
+# Vector Store
+VECTOR_STORE_BACKEND=faiss                        # ou "inmemory"
+
+# RAG
 RAG_CHUNK_SIZE_CHARS=1000
 RAG_CHUNK_OVERLAP_CHARS=150
-```
-
-**2. Arquivo de configuração (`config/settings.yaml`):**
-```yaml
-rag:
-  chunk_size_chars: 1000
-  chunk_overlap_chars: 150
-```
-
-### Quando Ajustar
-
-- **Documentos técnicos densos**: Aumente `chunk_size` para ~1500 para manter contexto técnico completo
-- **Documentos com seções curtas**: Reduza `chunk_size` para ~700 para evitar mistura de tópicos
-- **Overlap**: Aumente para ~200 se houver muitas referências cruzadas entre seções
-
-### Teste de Sanidade
-
-Para verificar o comportamento do chunking:
-```bash
-python backend\scripts\test_chunking.py
+ENABLE_QUERY_EXPANSION=true
+QUERY_EXPANSION_USE_LLM=true
 ```
 
 ---
+
+## 🧪 Testes
+
+```bash
+pytest backend/tests/ -v
+```
+
+---
+
+## 📝 Funcionalidades
+
+- ✅ Upload múltiplo de PDFs
+- ✅ Chunking inteligente com overlap
+- ✅ Embeddings multilíngues
+- ✅ Query expansion com LLM
+- ✅ Multi-query retrieval
+- ✅ Suporte a Gemini e LLMs locais
+- ✅ Métricas detalhadas
+- ✅ Interface web interativa
+- ✅ Deploy com Docker e Kubernetes

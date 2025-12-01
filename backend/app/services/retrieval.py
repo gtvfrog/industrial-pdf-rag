@@ -12,10 +12,6 @@ logger = logging.getLogger(__name__)
 
 
 def normalize_scores(results_with_scores: List[Tuple[float, Chunk]]) -> List[Tuple[float, Chunk]]:
-    """
-    Normaliza scores para range 0-1.
-    Protege contra divisão por zero.
-    """
     if not results_with_scores:
         return []
     
@@ -46,15 +42,6 @@ def multi_query_retrieval(
     k: int = 5,
     doc_ids: Optional[List[str]] = None
 ) -> List[Tuple[float, Chunk]]:
-    """
-    Executa retrieval para múltiplas queries e combina resultados.
-    
-    1. Para cada query, faz busca no vector store
-    2. Normaliza scores entre 0-1
-    3. Combina resultados por chunk_id (mantém maior score)
-    4. Ordena por score final
-    5. Retorna top-K chunks únicos com scores
-    """
     merged_results: Dict[str, Tuple[float, Chunk]] = {}
     
     top_k_per_query = settings.MULTI_QUERY_TOP_K_PER_QUERY

@@ -56,10 +56,6 @@ Sempre que possível, siga esta estrutura:
 """
 
 def build_rag_messages(question: str, chunks: List[Chunk]) -> List[Dict[str, str]]:
-    """
-    Monta as mensagens no formato chat (system + user) para Mistral e Gemini,
-    incluindo contexto paginado.
-    """
     context_blocks: List[str] = []
     for idx, chunk in enumerate(chunks, start=1):
         filename = chunk.metadata.get("filename", "desconhecido")
