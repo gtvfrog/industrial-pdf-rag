@@ -29,7 +29,10 @@ async def upload_documents(
     files: list[UploadFile] = File(...),
     settings: Settings = Depends(get_settings),
 ):
+    import time
     from pathlib import Path
+    from app.services.metrics import get_metrics_collector
+    
     project_root = Path(__file__).parent.parent.parent.parent
     save_dir = project_root / "documents"
     save_dir.mkdir(exist_ok=True)
@@ -39,6 +42,7 @@ async def upload_documents(
     
     embedding_service = get_embedding_service(settings)
     vector_store = get_vector_store()
+    metrics = get_metrics_collector()
     
     for file in files:
         if not file.filename.endswith(".pdf"):
@@ -52,6 +56,7 @@ async def upload_documents(
             
             doc_id = str(uuid.uuid4())
             
+            start_time = time.time()
             indexed_doc = ingest_pdf(
                 file_path=str(file_path),
                 doc_id=doc_id,
@@ -59,6 +64,13 @@ async def upload_documents(
                 settings=settings,
                 vector_store=vector_store,
                 embedding_service=embedding_service
+            )
+            duration = time.time() - start_time
+            
+            metrics.record_ingestion(
+                filename=file.filename,
+                duration=duration,
+                chunks_count=indexed_doc.num_chunks
             )
             
             total_chunks += indexed_doc.num_chunks

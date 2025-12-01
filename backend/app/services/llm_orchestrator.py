@@ -53,29 +53,6 @@ Sempre que possível, siga esta estrutura:
 - Seja objetivo e técnico, sem rodeios.
 - SEMPRE tente ser útil. É melhor fornecer informação parcial ou relacionada do que dizer 
   que não encontrou nada.
-"""
-
-def build_rag_messages(question: str, chunks: List[Chunk]) -> List[Dict[str, str]]:
-    context_blocks: List[str] = []
-    for idx, chunk in enumerate(chunks, start=1):
-        filename = chunk.metadata.get("filename", "desconhecido")
-        page = chunk.page if chunk.page is not None else chunk.metadata.get("page_number", "?")
-        text = chunk.text.strip()
-        context_blocks.append(
-            f"[{idx}] Documento: {filename} | página: {page}\n{text}"
-        )
-
-    context_str = "\n\n".join(context_blocks)
-
-    user_content = f"""
-Pergunta do usuário:
-{question}
-
-Trechos relevantes dos manuais (NÃO repita tudo na resposta, use apenas o que precisar):
-{context_str}
-
-Agora responda seguindo estritamente as regras do system prompt.
-"""
 
     return [
         {"role": "system", "content": SYSTEM_PROMPT},
@@ -167,10 +144,6 @@ class LocalLLMClient:
             
             messages = build_rag_messages(question, chunks)
             
-            # Convert messages to prompt format expected by the model
-            # Assuming the model supports chat template or we construct a simple prompt
-            # For Mistral Instruct, we can use the tokenizer's apply_chat_template if available
-            # or manual formatting.
             
             if hasattr(LocalLLMClient._tokenizer, "apply_chat_template"):
                 prompt = LocalLLMClient._tokenizer.apply_chat_template(
@@ -179,7 +152,6 @@ class LocalLLMClient:
                     add_generation_prompt=True
                 )
             else:
-                # Fallback manual formatting
                 system_msg = messages[0]["content"]
                 user_msg = messages[1]["content"]
                 prompt = f"[INST] {system_msg}\n\n{user_msg} [/INST]"

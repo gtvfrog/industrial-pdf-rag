@@ -21,6 +21,10 @@ class Settings(BaseSettings):
     
     RAG_CHUNK_SIZE_CHARS: int = 1000
     RAG_CHUNK_OVERLAP_CHARS: int = 150
+    
+    ENABLE_QUERY_EXPANSION: bool = True
+    QUERY_EXPANSION_USE_LLM: bool = True
+    MULTI_QUERY_TOP_K_PER_QUERY: int = 10
 
     model_config = SettingsConfigDict(env_file=["../config/.env", ".env"], env_file_encoding="utf-8", extra="ignore")
 

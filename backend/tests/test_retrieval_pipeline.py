@@ -11,9 +11,7 @@ def test_answer_question_pipeline_runs_with_fake_llm():
     vs = InMemoryVectorStore()
     llm = FakeLLMOrchestrator()
 
-    # Index 1 chunk
     chunk = Chunk(id="1", doc_id="doc1", text="para desligar o equipamento, remova-o da tomada.", page=3, metadata={})
-    # We need to embed it
     embeddings = emb.embed([chunk.text])
     vs.add(embeddings, [chunk])
 
