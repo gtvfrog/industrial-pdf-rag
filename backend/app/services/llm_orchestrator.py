@@ -6,53 +6,76 @@ from app.core.config import Settings
 
 logger = logging.getLogger(__name__)
 
-SYSTEM_PROMPT = """
-Você é um especialista técnico em motores elétricos WEG, redutores e motorredutores WEG-CESTARI
-e motores Baldor. Seu trabalho é responder perguntas com base nos trechos de manuais fornecidos.
+SYSTEM_PROMPT = """Você é um assistente técnico especializado em manuais industriais da WEG, WEG-CESTARI e Baldor.
 
-Regras importantes:
+SEU OBJETIVO:
+- Responder de forma objetiva, técnica e clara usando APENAS o conteúdo dos manuais fornecidos no CONTEXTO.
+- Evitar qualquer tipo de alucinação. Se algo não estiver nos textos, você deve dizer explicitamente que o manual não traz essa informação.
 
-1. Idioma e tom
-- Responda sempre em português do Brasil.
-- Use linguagem clara, direta e prática, como se estivesse ajudando um técnico de manutenção.
+INSTRUÇÕES DE RESPOSTA:
 
-2. Uso do contexto
-- Use as informações presentes nos trechos de contexto.
-- Você PODE combinar informações de arquivos diferentes se eles forem relevantes.
-- Se os documentos fornecidos falam sobre tópicos RELACIONADOS à pergunta (mesmo que não sejam 
-  exatamente sobre o equipamento específico mencionado na pergunta), USE essa informação e 
-  deixe claro de onde vem.
-- Não invente números, tabelas ou procedimentos que não apareçam claramente no contexto.
+1. Responda sempre em português (pt-BR), em tom técnico, mas acessível para engenheiros de manutenção.
+2. Use SOMENTE as informações presentes nos trechos de manual em "Contexto". 
+   - Se precisar fazer comentário geral de boas práticas, marque claramente como "orientação geral" e deixe claro que não está no manual.
+3. Quando a informação estiver explícita nos manuais:
+   - Comece com uma resposta direta de 1 a 3 parágrafos.
+   - Depois, liste os pontos principais em bullet points, se fizer sentido (por exemplo: passos, condições, itens a verificar).
+4. Quando a informação NÃO estiver nos manuais:
+   - Responda algo como:
+     "Os manuais fornecidos não trazem essa informação de forma explícita. Abaixo estão apenas orientações gerais."
+   - Se der orientações gerais, deixe isso CLARAMENTE separado do que vem dos manuais.
+5. Sempre traga as referências no final, neste formato:
+   - Referências:
+     - [1] NOME_ARQUIVO.pdf – página X: resumo curto do trecho usado
+     - [2] ...
+6. Se a resposta combinar informações de mais de um documento, explique rapidamente como cada um contribui (ex.: um define lubrificante, outro define condição de armazenagem).
+7. Seja conciso: em geral, 2–5 parágrafos + a seção de referências já é suficiente.
+"""
 
-3. Quando o contexto é parcial ou relacionado
-- Se o contexto tem informações sobre um tópico SIMILAR ou RELACIONADO, use-as e deixe claro:
-  - "Os manuais fornecidos não falam especificamente sobre [X], mas descrevem procedimentos 
-    similares para [Y]..."
-  - "Embora os documentos não mencionem [X] explicitamente, as orientações gerais sobre [Y] são..."
-- SEMPRE tente fornecer informação útil, mesmo que parcial.
+def build_rag_prompt(question: str, chunks: List[Chunk]) -> str:
+    context_blocks: List[str] = []
+    for idx, chunk in enumerate(chunks, start=1):
+        filename = chunk.metadata.get("filename", "desconhecido")
+        page = chunk.page if chunk.page is not None else chunk.metadata.get("page_number", "?")
+        text = chunk.text.strip()
+        context_blocks.append(
+            f"[{idx}] arquivo={filename}, página={page}\n    {text}"
+        )
 
-4. Quando realmente faltar informação
-- Só responda "não encontrei informação suficiente nos manuais" se os documentos fornecidos 
-  forem COMPLETAMENTE irrelevantes para a pergunta.
-- Antes de dizer que não encontrou, verifique se não há informação RELACIONADA ou GENÉRICA 
-  que possa ser útil.
+    context_str = "\n\n".join(context_blocks)
 
-5. Formato da resposta
-Sempre que possível, siga esta estrutura:
+    prompt = f"""{SYSTEM_PROMPT}
 
-1) Resumo inicial em 2–3 frases, respondendo diretamente ou indicando o que foi encontrado.
-2) Se fizer sentido, liste orientações em tópicos, por exemplo:
-   - requisitos de transporte
-   - passos de inspeção
-   - recomendações de lubrificação
-3) Inclua uma seção final chamada "Referências", no formato:
-   - <arquivo> – página X: breve descrição do que foi usado
+CONTEXTO DOS MANUAIS:
+{context_str}
 
-6. Estilo
-- Não copie parágrafos enormes; resuma com suas palavras.
-- Seja objetivo e técnico, sem rodeios.
-- SEMPRE tente ser útil. É melhor fornecer informação parcial ou relacionada do que dizer 
-  que não encontrou nada.
+PERGUNTA DO USUÁRIO:
+{question}
+
+RESPOSTA (em português, técnico, objetivo, com referências):
+"""
+    return prompt
+
+def build_rag_messages(question: str, chunks: List[Chunk]) -> List[Dict[str, str]]:
+    context_blocks: List[str] = []
+    for idx, chunk in enumerate(chunks, start=1):
+        filename = chunk.metadata.get("filename", "desconhecido")
+        page = chunk.page if chunk.page is not None else chunk.metadata.get("page_number", "?")
+        text = chunk.text.strip()
+        context_blocks.append(
+            f"[{idx}] arquivo={filename}, página={page}\n    {text}"
+        )
+
+    context_str = "\n\n".join(context_blocks)
+
+    user_content = f"""CONTEXTO DOS MANUAIS:
+{context_str}
+
+PERGUNTA DO USUÁRIO:
+{question}
+
+RESPOSTA (em português, técnico, objetivo, com referências):
+"""
 
     return [
         {"role": "system", "content": SYSTEM_PROMPT},
@@ -142,19 +165,7 @@ class LocalLLMClient:
         try:
             self._load_model()
             
-            messages = build_rag_messages(question, chunks)
-            
-            
-            if hasattr(LocalLLMClient._tokenizer, "apply_chat_template"):
-                prompt = LocalLLMClient._tokenizer.apply_chat_template(
-                    messages, 
-                    tokenize=False, 
-                    add_generation_prompt=True
-                )
-            else:
-                system_msg = messages[0]["content"]
-                user_msg = messages[1]["content"]
-                prompt = f"[INST] {system_msg}\n\n{user_msg} [/INST]"
+            prompt = build_rag_prompt(question, chunks)
             
             inputs = LocalLLMClient._tokenizer(prompt, return_tensors="pt")
             inputs = {k: v.to(LocalLLMClient._model.device) for k, v in inputs.items()}
@@ -215,12 +226,11 @@ class GeminiLLMClient:
         from app.services.metrics import get_metrics_collector
         
         try:
-            messages = build_rag_messages(question, chunks)
-            user_content = messages[1]["content"]
+            prompt = build_rag_prompt(question, chunks)
             
             start_time = time.time()
             response = self.model.generate_content(
-                user_content,
+                prompt,
                 generation_config=genai.types.GenerationConfig(
                     max_output_tokens=1024,
                     temperature=0.1,

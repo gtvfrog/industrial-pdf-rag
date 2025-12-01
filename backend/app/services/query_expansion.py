@@ -33,8 +33,83 @@ Pergunta original:
 "{question}"
 
 Variações:
-    Usa LLM para reescrever a query de forma inteligente.
-    Retorna lista vazia se LLM não estiver disponível ou falhar.
-    Expande uma query em múltiplas versões para melhorar recall.
+"""
+
+
+def _expand_with_llm(question: str, settings: Settings) -> List[str]:
+    try:
+        from app.services.llm_orchestrator import get_llm_client
+        
+        if not settings.QUERY_EXPANSION_USE_LLM:
+            logger.info("[QUERY_EXPANSION] LLM expansion disabled by config")
+            return []
+        
+        if settings.LLM_PROVIDER == "gemini" and not settings.GEMINI_API_KEY:
+            logger.info("[QUERY_EXPANSION] Gemini selected but no API key available")
+            return []
+        
+        client = get_llm_client(settings)
+        
+        prompt = QUERY_EXPANSION_PROMPT.format(question=question)
+        
+        expanded_text = ""
+        
+        if hasattr(client, 'model') and isinstance(client.model, genai.GenerativeModel):
+            response = client.model.generate_content(
+                prompt,
+                generation_config=genai.types.GenerationConfig(
+                    max_output_tokens=150,
+                    temperature=0.3,
+                )
+            )
+            expanded_text = response.text if response.text else ""
+        else:
+            from app.services.llm_orchestrator import LocalLLMClient
+            if isinstance(client, LocalLLMClient):
+                client._load_model()
+                inputs = client._tokenizer(prompt, return_tensors="pt")
+                inputs = {k: v.to(client._model.device) for k, v in inputs.items()}
+                
+                outputs = client._model.generate(
+                    **inputs,
+                    max_new_tokens=150,
+                    temperature=0.3,
+                    do_sample=True,
+                    pad_token_id=client._tokenizer.eos_token_id
+                )
+                
+                input_length = inputs["input_ids"].shape[1]
+                generated_tokens = outputs[0][input_length:]
+                expanded_text = client._tokenizer.decode(generated_tokens, skip_special_tokens=True)
+            else:
+                return []
+        
+        variations = [
+            line.strip()
+            for line in expanded_text.splitlines()
+            if line.strip()
+        ]
+        variations = list(dict.fromkeys(variations))[:3]
+        
+        if variations:
+            logger.info(f"[QUERY_EXPANSION] LLM expanded query successfully: {variations}")
+            return variations
+        else:
+            logger.warning("[QUERY_EXPANSION] LLM returned empty response or no variations")
+            return []
+            
+    except Exception as e:
+        logger.warning(f"[QUERY_EXPANSION] LLM expansion failed: {e}")
+        return []
+
+
+def expand_query(question: str, settings: Settings) -> List[str]:
+    queries = []
     
-    Retorna lista com query original + variações do LLM.
+    q_clean = question.strip()
+    queries.append(q_clean)
+    
+    llm_variations = _expand_with_llm(q_clean, settings)
+    queries.extend(llm_variations)
+    
+    return list(dict.fromkeys(queries))
