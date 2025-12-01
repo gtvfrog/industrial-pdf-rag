@@ -17,7 +17,7 @@ settings = get_settings()
 async def startup_event():
     global llm_ready, llm_loading
     
-    if settings.LLM_PROVIDER == "hf_local":
+    if settings.LLM_PROVIDER in ("local", "hf_local") and settings.LLM_WARMUP:
         llm_loading = True
         
         async def load_llm_background():
@@ -44,7 +44,11 @@ async def startup_event():
         
         asyncio.create_task(load_llm_background())
     else:
-        llm_ready = True
+        if settings.LLM_PROVIDER in ("local", "hf_local"):
+            print("\nLLM warmup desabilitado; o modelo local carregará na primeira pergunta.\n")
+            llm_ready = False
+        else:
+            llm_ready = True
 
 app.include_router(routes_documents.router)
 app.include_router(routes_questions.router)

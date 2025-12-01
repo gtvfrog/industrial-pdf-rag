@@ -73,7 +73,8 @@ def retrieve_relevant_chunks(
     embedding_service: EmbeddingService, 
     vector_store: VectorStore, 
     k: int = 8, 
-    doc_ids: Optional[List[str]] = None
+    doc_ids: Optional[List[str]] = None,
+    llm_provider: Optional[str] = None,
 ) -> List[Chunk]:
     
     q_clean = question.strip()
@@ -84,7 +85,7 @@ def retrieve_relevant_chunks(
         from app.services.query_expansion import expand_query
         
         logger.info(f"[QUERY] original: {q_clean}")
-        expanded_queries = expand_query(q_clean, settings)
+        expanded_queries = expand_query(q_clean, settings, llm_provider=llm_provider)
         
         for i, q in enumerate(expanded_queries):
             logger.info(f"[QUERY] expanded[{i}]: {q}")
@@ -133,7 +134,15 @@ def answer_question(
     
     logger.info("question_pipeline_start")
     
-    chunks = retrieve_relevant_chunks(question, settings, embedding_service, vector_store, k=8, doc_ids=doc_ids)
+    chunks = retrieve_relevant_chunks(
+        question,
+        settings,
+        embedding_service,
+        vector_store,
+        k=8,
+        doc_ids=doc_ids,
+        llm_provider=llm_provider,
+    )
     
     answer, provider_used, fallback_from = answer_with_fallback(
         question=question,

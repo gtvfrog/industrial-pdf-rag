@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: Optional[str] = None
     VECTOR_STORE_PATH: str = "../data/vector_store"
     METRICS_HISTORY_DIR: str = "../metrics_history"
+    LLM_WARMUP: bool = False
     
     RAG_CHUNK_SIZE_CHARS: int = 1000
     RAG_CHUNK_OVERLAP_CHARS: int = 150
