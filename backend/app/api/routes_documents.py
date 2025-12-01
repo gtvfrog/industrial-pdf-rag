@@ -1,12 +1,12 @@
-import shutil
 import os
+import shutil
 import uuid
 from fastapi import APIRouter, UploadFile, File, Depends, HTTPException
 from app.core.config import Settings, get_settings
 from app.services.models import DocumentsResponse
 from app.services.ingestion import ingest_pdf
 from app.services.embeddings import get_embedding_service
-from app.services.vector_store import get_vector_store
+from app.services.vector_store import get_vector_store, persist_vector_store
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 
@@ -43,10 +43,17 @@ async def upload_documents(
     embedding_service = get_embedding_service(settings)
     vector_store = get_vector_store()
     metrics = get_metrics_collector()
+    max_mb = 200
     
     for file in files:
-        if not file.filename.endswith(".pdf"):
-            continue
+        if not file.filename.lower().endswith(".pdf") or (file.content_type and "pdf" not in file.content_type):
+            raise HTTPException(status_code=400, detail=f"File {file.filename} is not a PDF")
+        
+        file.file.seek(0, os.SEEK_END)
+        size_mb = file.file.tell() / (1024 * 1024)
+        file.file.seek(0)
+        if size_mb > max_mb:
+            raise HTTPException(status_code=413, detail=f"File {file.filename} exceeds {max_mb}MB limit")
         
         file_path = save_dir / f"{uuid.uuid4()}_{file.filename}"
         
@@ -75,7 +82,10 @@ async def upload_documents(
             
             total_chunks += indexed_doc.num_chunks
             documents_indexed += 1
+            persist_vector_store(vector_store)
             
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail=str(e))
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
     

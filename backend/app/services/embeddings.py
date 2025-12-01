@@ -32,16 +32,19 @@ class GeminiEmbeddingService:
         model = "models/embedding-001"
         
         try:
-            result = genai.embed_content(
-                model=model,
-                content=texts,
-                task_type="retrieval_document"
-            )
+            embeddings: list[list[float]] = []
+            for text in texts:
+                result = genai.embed_content(
+                    model=model,
+                    content=text,
+                    task_type="retrieval_document"
+                )
+                if isinstance(result, dict) and "embedding" in result:
+                    embeddings.append(result["embedding"])
+                else:
+                    raise ValueError(f"Unexpected response from Gemini Embedding: {result}")
             
-            if 'embedding' in result:
-                 return result['embedding']
-            else:
-                 raise ValueError(f"Unexpected response from Gemini Embedding: {result}")
+            return embeddings
 
         except Exception as e:
             print(f"Error calling Gemini Embedding: {e}")

@@ -23,8 +23,10 @@ def test_vector_store_returns_most_similar_chunk():
     results = vs.search(q_emb, k=1)
 
     assert len(results) == 1
-    assert results[0].id == "1"
-    assert "motor" in results[0].text
+    score, chunk = results[0]
+    assert score <= 1.0
+    assert chunk.id == "1"
+    assert "motor" in chunk.text
 
 def test_vector_store_filtering():
     vs = InMemoryVectorStore()
@@ -36,4 +38,5 @@ def test_vector_store_filtering():
     
     results = vs.search([1.0], k=2, doc_ids=["doc1"])
     assert len(results) == 1
-    assert results[0].doc_id == "doc1"
+    _, chunk = results[0]
+    assert chunk.doc_id == "doc1"

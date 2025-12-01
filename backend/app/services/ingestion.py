@@ -1,25 +1,33 @@
 import logging
+
 import fitz
+
 from app.core.config import Settings
-from app.services.models import IndexedDocument
-from app.services.embeddings import EmbeddingService
-from app.services.vector_store import VectorStore
 from app.services.chunking import chunk_pages
+from app.services.embeddings import EmbeddingService
+from app.services.models import IndexedDocument
+from app.services.vector_store import VectorStore
 
 logger = logging.getLogger(__name__)
 
-def extract_text_from_pdf(file_path: str) -> list[dict]:
+def extract_text_from_pdf(file_path: str, max_pages: int = 800) -> list[dict]:
     pages = []
+    doc = None
     try:
         doc = fitz.open(file_path)
+        if len(doc) > max_pages:
+            raise ValueError(f"PDF has {len(doc)} pages, exceeds the limit of {max_pages}")
+
         for i, page in enumerate(doc):
             text = page.get_text()
             pages.append({"page": i + 1, "text": text})
-        doc.close()
     except Exception as e:
         logger.error(f"Error reading PDF {file_path}: {e}")
         raise e
-        
+    finally:
+        if doc is not None:
+            doc.close()
+
     return pages
 
 def ingest_pdf(

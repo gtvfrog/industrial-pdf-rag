@@ -1,48 +1,44 @@
-# 📄 Industrial RAG Assistant
+# Industrial RAG Assistant
 
-Sistema de perguntas e respostas baseado em PDFs de manuais industriais (WEG, WEG-CESTARI, Baldor).
+Sistema de perguntas e respostas sobre PDFs de manuais industriais (WEG, WEG-CESTARI, Baldor).
 
 ---
 
-## 🏗️ Arquitetura
+## Arquitetura
 
 ```
 industrial-rag-assistant/
-├── backend/
-│   ├── app/
-│   │   ├── api/                # Rotas FastAPI
-│   │   ├── core/               # Configurações
-│   │   ├── services/           # Serviços (embeddings, retrieval, LLM, metrics)
-│   │   └── main.py
-│   ├── scripts/                # Utilitários
-│   └── tests/
-├── frontend/
-│   └── Chat.py                 # Interface Streamlit
-├── config/
-│   ├── .env
-│   └── logging.json
-├── k8s/                        # Manifests Kubernetes
-├── docker-compose.yml
-└── README.md
+├─ backend/
+│  ├─ app/
+│  │  ├─ api/                # Rotas FastAPI
+│  │  ├─ core/               # Configurações
+│  │  ├─ services/           # Serviços (embeddings, retrieval, LLM, métricas)
+│  │  └─ main.py
+│  ├─ scripts/               # Utilitários
+│  └─ tests/
+├─ frontend/                 # Interface Streamlit
+├─ config/                   # .env, logging.json
+├─ k8s/                      # Manifests Kubernetes
+├─ docker-compose.yml
+└─ README.md
 ```
 
 ---
 
-## ⚙️ Tecnologias
+## Tecnologias
 
-- **Backend**: FastAPI + Python 3.10+
-- **Embeddings**: HuggingFace (multilingual-e5-base)
-- **Vector Store**: FAISS ou InMemory
-- **LLM**: Gemini 2.0 Flash ou Mistral 7B local
-- **Frontend**: Streamlit
-- **Deploy**: Docker + Kubernetes
+- **Backend**: FastAPI + Python 3.10+  
+- **Embeddings**: HuggingFace (`intfloat/multilingual-e5-base`)  
+- **Vector Store**: FAISS (persistido em disco) ou InMemory  
+- **LLM**: Gemini 2.0 Flash (API) ou Mistral 7B local (quantizado)  
+- **Frontend**: Streamlit  
+- **Deploy**: Docker + Kubernetes  
 
 ---
 
-## 🚀 Como rodar
+## Como rodar
 
 ### Local
-
 ```bash
 # Backend
 cd backend
@@ -54,21 +50,15 @@ streamlit run frontend/Chat.py --server.port 8501
 ```
 
 ### Docker
-
 ```bash
 docker-compose up --build
 ```
-
-- Backend: `http://localhost:8000/docs`
-- Frontend: `http://localhost:8501`
+- Backend: http://localhost:8000/docs  
+- Frontend: http://localhost:8501  
 
 ### Kubernetes
-
 ```bash
-# Configurar secrets
-kubectl apply -f k8s/secret-example.yaml
-
-# Deploy
+kubectl apply -f k8s/secret-example.yaml   # configure secrets
 kubectl apply -f k8s/configmap.yaml
 kubectl apply -f k8s/backend-deployment.yaml
 kubectl apply -f k8s/frontend-deployment.yaml
@@ -77,75 +67,69 @@ kubectl apply -f k8s/ingress.yaml
 
 ---
 
-## 📌 Endpoints Principais
+## Endpoints principais
 
-### **POST /documents**
-Upload e indexação de PDFs
+- **POST /documents** — upload e indexação de PDFs  
+  ```bash
+  curl -X POST "http://localhost:8000/documents" \
+    -F "files=@manual.pdf"
+  ```
 
-```bash
-curl -X POST "http://localhost:8000/documents" \
-  -F "files=@manual.pdf"
-```
+- **POST /question** — fazer perguntas  
+  ```bash
+  curl -X POST http://localhost:8000/question \
+    -H "Content-Type: application/json" \
+    -d '{"question": "Como é o transporte de redutores?"}'
+  ```
 
-### **POST /question**
-Realizar pergunta
-
-```bash
-curl -X POST http://localhost:8000/question \
-  -H "Content-Type: application/json" \
-  -d '{"question": "Como é o transporte de redutores?"}'
-```
-
-### **GET /documents**
-Listar documentos indexados
-
-### **GET /metrics**
-Métricas do sistema (retrieval, LLM, embeddings)
+- **GET /documents** — lista documentos indexados  
+- **GET /metrics** — métricas do sistema  
 
 ---
 
-## 🔧 Configuração
+## Configuração
 
-Principais variáveis de ambiente (`.env`):
-
+Variáveis principais (`config/.env`):
 ```bash
 # LLM
-LLM_PROVIDER=gemini                               # ou "local"
+LLM_PROVIDER=gemini                     # ou "local"
 GEMINI_API_KEY=your_key_here
 GEMINI_LLM_MODEL=gemini-2.0-flash-exp
 
 # Embeddings
 EMBEDDING_PROVIDER=huggingface
 EMBEDDING_MODEL_NAME=intfloat/multilingual-e5-base
+HF_CACHE_DIR=../models_cache
 
 # Vector Store
-VECTOR_STORE_BACKEND=faiss                        # ou "inmemory"
+VECTOR_STORE_BACKEND=faiss              # ou "inmemory"
+VECTOR_STORE_PATH=../data/vector_store
 
 # RAG
 RAG_CHUNK_SIZE_CHARS=1000
 RAG_CHUNK_OVERLAP_CHARS=150
 ENABLE_QUERY_EXPANSION=true
 QUERY_EXPANSION_USE_LLM=true
+MULTI_QUERY_TOP_K_PER_QUERY=10
 ```
 
 ---
 
-## 🧪 Testes
-
+## Testes
 ```bash
 pytest backend/tests/ -v
 ```
 
 ---
 
-## 📝 Funcionalidades
+## Funcionalidades
 
-- ✅ Upload múltiplo de PDFs
-- ✅ Chunking inteligente com overlap
-- ✅ Embeddings multilíngues
-- ✅ Query expansion com LLM
-- ✅ Multi-query retrieval
-- ✅ Suporte a Gemini e LLMs locais
-- ✅ Métricas detalhadas
-- ✅ Interface web interativa
-- ✅ Deploy com Docker e Kubernetes
+- Upload múltiplo de PDFs
+- Chunking com overlap configurável
+- Embeddings multilíngues
+- Query expansion via LLM (opcional)
+- Multi-query retrieval
+- Suporte a Gemini e LLM local (Mistral 7B quantizado)
+- Métricas de ingestão, embeddings, retrieval e LLM
+- Interface web interativa (Streamlit)
+- Deploy com Docker e Kubernetes

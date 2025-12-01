@@ -1,15 +1,25 @@
 from typing import Protocol
+import logging
 import numpy as np
 import os
 import pickle
 from pathlib import Path
+
 from app.services.models import Chunk
+
+logger = logging.getLogger(__name__)
 
 class VectorStore(Protocol):
     def add(self, embeddings: list[list[float]], chunks: list[Chunk]) -> None:
         ...
 
     def search(self, query_embedding: list[float], k: int = 5, doc_ids: list[str] | None = None) -> list[tuple[float, Chunk]]:
+        ...
+
+    def save(self, path: str | Path) -> None:
+        ...
+
+    def load(self, path: str | Path) -> None:
         ...
 
 class InMemoryVectorStore:
@@ -177,6 +187,40 @@ class FaissVectorStore:
 
 _backend_cache: VectorStore | None = None
 
+def _resolve_store_path() -> Path:
+    raw_path = os.getenv("VECTOR_STORE_PATH", "../data/vector_store")
+    path = Path(raw_path)
+    if not path.is_absolute():
+        backend_dir = Path(__file__).resolve().parents[2]  # points to backend/
+        path = (backend_dir / path).resolve()
+    return path
+
+
+def _load_store_if_exists(store: VectorStore, path: Path) -> None:
+    try:
+        if isinstance(store, FaissVectorStore):
+            index_path = path.with_suffix(".index")
+            meta_path = path.with_suffix(".meta.pkl")
+            if index_path.exists() and meta_path.exists():
+                store.load(path)
+                logger.info(f"[VECTOR_STORE] Loaded FAISS index from {index_path}")
+        elif isinstance(store, InMemoryVectorStore):
+            if path.exists():
+                store.load(path)
+                logger.info(f"[VECTOR_STORE] Loaded in-memory store from {path}")
+    except Exception as exc:
+        logger.warning(f"[VECTOR_STORE] Failed to load persisted store: {exc}")
+
+
+def persist_vector_store(store: VectorStore) -> None:
+    path = _resolve_store_path()
+    try:
+        store.save(path)
+        logger.info(f"[VECTOR_STORE] Persisted store to {path}")
+    except Exception as exc:
+        logger.warning(f"[VECTOR_STORE] Failed to persist store to {path}: {exc}")
+
+
 def get_vector_store() -> VectorStore:
     global _backend_cache
     if _backend_cache is not None:
@@ -189,5 +233,6 @@ def get_vector_store() -> VectorStore:
     else:
         store = FaissVectorStore()
 
+    _load_store_if_exists(store, _resolve_store_path())
     _backend_cache = store
     return store
